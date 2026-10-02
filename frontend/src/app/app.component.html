@@ -1,0 +1,166 @@
+<div class="app-shell">
+
+  <!-- Sidebar Overlay -->
+  <div class="sidebar-overlay" *ngIf="sidebarOpen" (click)="sidebarOpen = false"></div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" [class.open]="sidebarOpen">
+    <div class="sidebar-top">
+      <div class="sidebar-brand">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="brand-svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+        </svg>
+        <span>VectorSearch AI</span>
+      </div>
+      <button class="close-sidebar" (click)="sidebarOpen = false">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+
+    <!-- Upload Area -->
+    <div class="sidebar-upload"
+         [class.dragging]="isDragging"
+         (dragover)="onDragOver($event)"
+         (dragleave)="onDragLeave($event)"
+         (drop)="onDrop($event)">
+      <div *ngIf="!uploading && !uploadSuccess">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="upload-svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+        </svg>
+        <p class="upload-label">Drop file or <span class="browse-link" (click)="fileInput.click()">browse</span></p>
+        <p class="upload-hint">PDF, TXT supported</p>
+        <input type="file" #fileInput (change)="onFileSelected($event)" accept=".pdf,.txt" style="display:none">
+      </div>
+      <div *ngIf="uploading" class="upload-progress">
+        <div class="spinner"></div>
+        <p>Processing & vectorizing...</p>
+      </div>
+      <div *ngIf="uploadSuccess" class="upload-done">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+        <p>Upload complete!</p>
+      </div>
+    </div>
+
+    <!-- Documents -->
+    <div class="sidebar-docs">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+        <h4 style="margin-bottom: 0;">Your Documents</h4>
+        <button class="clear-btn" (click)="clearDocuments()" *ngIf="documents.length > 0">Clear All</button>
+      </div>
+      <div class="doc-list" *ngIf="documents.length > 0">
+        <div class="doc-row" *ngFor="let doc of documents">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="doc-svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+          </svg>
+          <div class="doc-detail">
+            <span class="doc-title" [title]="doc.filename">{{ doc.filename }}</span>
+            <span class="doc-sub">{{ doc.chunkCount }} chunks &middot; {{ formatDate(doc.uploadDate) }}</span>
+          </div>
+        </div>
+      </div>
+      <p class="no-docs-msg" *ngIf="documents.length === 0">No documents uploaded yet.</p>
+    </div>
+
+    <div class="sidebar-bottom">
+      <div class="online-badge"><span class="green-dot"></span> System Online</div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main">
+
+    <!-- Top Bar -->
+    <div class="topbar">
+      <button class="menu-btn" (click)="sidebarOpen = true">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
+      </button>
+      <h1 class="topbar-title">VectorSearch AI</h1>
+      <div class="topbar-right">
+        <button class="clear-chat-btn" *ngIf="chatMessages.length > 0" (click)="clearChat()" title="Clear chat history">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width:16px;height:16px"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+          New Chat
+        </button>
+        <span class="doc-count" *ngIf="documents.length > 0">{{ documents.length }} doc{{ documents.length > 1 ? 's' : '' }}</span>
+      </div>
+    </div>
+
+    <!-- Chat Area -->
+    <div class="chat-scroll" #chatContainer>
+
+      <!-- Welcome Screen -->
+      <div class="welcome" *ngIf="chatMessages.length === 0">
+        <div class="welcome-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+          </svg>
+        </div>
+        <h2>What can I help you with?</h2>
+        <p class="welcome-sub">Ask me anything. Upload a document for context-aware answers, or just chat freely.</p>
+        <div class="suggestions">
+          <button class="suggestion" (click)="currentQuery = 'Summarize the uploaded document'; sendMessage()">📄 Summarize my document</button>
+          <button class="suggestion" (click)="currentQuery = 'What are the key takeaways?'; sendMessage()">💡 Key takeaways</button>
+          <button class="suggestion" (click)="currentQuery = 'Explain the main concepts'; sendMessage()">🧠 Explain main concepts</button>
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <div class="messages-wrap" *ngIf="chatMessages.length > 0">
+        <div *ngFor="let msg of chatMessages" class="msg-row" [class.user-row]="msg.role === 'user'">
+          <div class="msg-inner">
+            <!-- Avatar -->
+            <div class="avatar" *ngIf="msg.role === 'assistant'">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path fill-rule="evenodd" d="M9 4.5a.75.75 0 0 1 .721.544l.813 2.846a3.75 3.75 0 0 0 2.576 2.576l2.846.813a.75.75 0 0 1 0 1.442l-2.846.813a3.75 3.75 0 0 0-2.576 2.576l-.813 2.846a.75.75 0 0 1-1.442 0l-.813-2.846a3.75 3.75 0 0 0-2.576-2.576l-2.846-.813a.75.75 0 0 1 0-1.442l2.846-.813A3.75 3.75 0 0 0 7.466 7.89l.813-2.846A.75.75 0 0 1 9 4.5ZM18 1.5a.75.75 0 0 1 .728.568l.258 1.036c.236.94.97 1.674 1.91 1.911l1.036.258a.75.75 0 0 1 0 1.454l-1.036.258c-.94.236-1.674.97-1.91 1.911l-.258 1.036a.75.75 0 0 1-1.456 0l-.258-1.036a2.625 2.625 0 0 0-1.911-1.911l-1.036-.258a.75.75 0 0 1 0-1.454l1.036-.258a2.625 2.625 0 0 0 1.911-1.911l.258-1.036A.75.75 0 0 1 18 1.5ZM16.5 15a.75.75 0 0 1 .712.513l.394 1.183c.15.447.5.799.948.948l1.183.395a.75.75 0 0 1 0 1.422l-1.183.395c-.447.15-.799.5-.948.948l-.395 1.183a.75.75 0 0 1-1.422 0l-.395-1.183a1.5 1.5 0 0 0-.948-.948l-1.183-.395a.75.75 0 0 1 0-1.422l1.183-.395c.447-.15.799-.5.948-.948l.395-1.183A.75.75 0 0 1 16.5 15Z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <div class="msg-body" [class.user-body]="msg.role === 'user'">
+              <p class="msg-content">{{ msg.content }}</p>
+              <div class="sources-row" *ngIf="msg.sources && msg.sources.length > 0">
+                <span class="src-label">Sources:</span>
+                <span class="src-chip" *ngFor="let s of msg.sources">{{ s }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Typing -->
+        <div class="msg-row" *ngIf="isTyping">
+          <div class="msg-inner">
+            <div class="avatar">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path fill-rule="evenodd" d="M9 4.5a.75.75 0 0 1 .721.544l.813 2.846a3.75 3.75 0 0 0 2.576 2.576l2.846.813a.75.75 0 0 1 0 1.442l-2.846.813a3.75 3.75 0 0 0-2.576 2.576l-.813 2.846a.75.75 0 0 1-1.442 0l-.813-2.846a3.75 3.75 0 0 0-2.576-2.576l-2.846-.813a.75.75 0 0 1 0-1.442l2.846-.813A3.75 3.75 0 0 0 7.466 7.89l.813-2.846A.75.75 0 0 1 9 4.5ZM18 1.5a.75.75 0 0 1 .728.568l.258 1.036c.236.94.97 1.674 1.91 1.911l1.036.258a.75.75 0 0 1 0 1.454l-1.036.258c-.94.236-1.674.97-1.91 1.911l-.258 1.036a.75.75 0 0 1-1.456 0l-.258-1.036a2.625 2.625 0 0 0-1.911-1.911l-1.036-.258a.75.75 0 0 1 0-1.454l1.036-.258a2.625 2.625 0 0 0 1.911-1.911l.258-1.036A.75.75 0 0 1 18 1.5ZM16.5 15a.75.75 0 0 1 .712.513l.394 1.183c.15.447.5.799.948.948l1.183.395a.75.75 0 0 1 0 1.422l-1.183.395c-.447.15-.799.5-.948.948l-.395 1.183a.75.75 0 0 1-1.422 0l-.395-1.183a1.5 1.5 0 0 0-.948-.948l-1.183-.395a.75.75 0 0 1 0-1.422l1.183-.395c.447-.15.799-.5.948-.948l.395-1.183A.75.75 0 0 1 16.5 15Z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <div class="msg-body typing-indicator">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="input-area">
+      <div class="input-box">
+        <button class="attach-btn" (click)="fileInput2.click()" title="Attach Document">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+        </button>
+        <input type="file" #fileInput2 (change)="onFileSelected($event)" accept=".pdf,.txt" style="display:none">
+        <textarea
+          [(ngModel)]="currentQuery"
+          (keydown)="handleKeydown($event)"
+          placeholder="Message VectorSearch AI..."
+          rows="1"
+          #queryInput></textarea>
+        <button class="send-btn" (click)="sendMessage()" [disabled]="!currentQuery.trim() || isTyping">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+          </svg>
+        </button>
+      </div>
+      <p class="input-footer">Powered by Ollama &middot; llama3.2:1b + nomic-embed-text &middot; Running locally</p>
+    </div>
+  </main>
+</div>

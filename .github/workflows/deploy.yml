@@ -1,0 +1,41 @@
+name: Deploy to Cloud Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy Application
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # 1. Go to the project folder (it will create it if it doesn't exist)
+            mkdir -p ~/vector-retrieval-system
+            cd ~/vector-retrieval-system
+            
+            # 2. If it's a git repo, pull latest code. If not, clone it.
+            if [ -d ".git" ]; then
+              git pull origin main
+            else
+              git clone https://github.com/${{ github.repository }}.git .
+            fi
+
+            # 3. Rebuild and restart the Docker containers in the background
+            docker-compose build --no-cache
+            docker-compose up -d
+
+            # 4. Pull the Ollama models (just in case it's a fresh server)
+            docker exec vector-retrieval-system-ollama-1 ollama pull llama3.2:1b
+            docker exec vector-retrieval-system-ollama-1 ollama pull nomic-embed-text
