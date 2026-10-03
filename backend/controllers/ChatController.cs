@@ -32,71 +32,105 @@ namespace VectorRetrievalSystem.Api.controllers
             if (string.IsNullOrWhiteSpace(request.Query))
                 return BadRequest("Query is required.");
 
-            // 1. Generate query embedding
-            var queryEmbedding = await _llmService.GenerateEmbeddingAsync(request.Query);
+            // Define tools for the agent
+            var tools = new[]
+            {
+                new {
+                    type = "function",
+                    function = new {
+                        name = "get_database_stats",
+                        description = "Use this tool to check how many documents or files are currently uploaded in the system."
+                    }
+                },
+                new {
+                    type = "function",
+                    function = new {
+                        name = "search_documents",
+                        description = "Use this tool to search the vector database for facts or information contained in the user's uploaded documents.",
+                        parameters = new {
+                            type = "object",
+                            properties = new { query = new { type = "string", description = "The search query to look for in the documents." } },
+                            required = new[] { "query" }
+                        }
+                    }
+                }
+            };
 
-            // 2. Search similar chunks WITH scores so we can judge relevance
-            await _vectorService.InitializeCollectionAsync();
-            var scoredResults = await _vectorService.SearchSimilarChunksWithScoresAsync(queryEmbedding, topK: 3);
+            var systemPrompt = @"You are a helpful AI Assistant managing a Vector Retrieval System. 
+You MUST use the provided tools to answer user questions when appropriate:
+- If the user asks about system stats or uploaded files, use the `get_database_stats` tool.
+- If the user asks for specific knowledge, use the `search_documents` tool to query their files.
+- If the user is just saying hello or having casual chat, respond naturally WITHOUT using any tools.";
 
-            // 3. Determine if the query is actually related to documents
-            //    Cosine similarity: 1.0 = perfect match, 0.0 = completely unrelated
-            //    Threshold of 0.35 filters out greetings, casual chat, and off-topic questions
-            float relevanceThreshold = 0.35f;
-            var relevantResults = scoredResults.Where(r => r.Score >= relevanceThreshold).ToList();
-            bool isDocumentRelated = relevantResults.Any();
+            // Step 1: Agent decides which tool to call
+            var initialResponse = await _llmService.GenerateChatResponseAsync(systemPrompt, request.Query, tools);
 
-            string responseText;
+            string finalResponseText = initialResponse.Content;
             List<string> sources = new();
 
-            if (isDocumentRelated)
+            // Step 2: Execute tool if the agent requested one
+            if (initialResponse.ToolCalls != null && initialResponse.ToolCalls.Any())
             {
-                // Fetch text for the relevant chunks from DB
-                var relevantIds = relevantResults.Select(r => r.Id).ToList();
-                var chunks = await _context.DocumentChunks
-                    .Include(c => c.Document)
-                    .Where(c => relevantIds.Contains(c.Id))
-                    .ToListAsync();
+                var tool = initialResponse.ToolCalls.First();
+                string toolContext = "";
 
-                // Trim each chunk to 800 chars max to keep the prompt lean
-                var contextText = string.Join("\n\n", chunks.Select(c => {
-                    var txt = c.Text.Length > 800 ? c.Text.Substring(0, 800) : c.Text;
-                    return $"[Source: {c.Document?.Filename}]\n{txt}";
-                }));
+                if (tool.Name == "get_database_stats")
+                {
+                    int docCount = await _context.Documents.CountAsync();
+                    int chunkCount = await _context.DocumentChunks.CountAsync();
+                    toolContext = $"Database Stats: There are {docCount} documents uploaded, split into {chunkCount} vector chunks.";
+                }
+                else if (tool.Name == "search_documents")
+                {
+                    string searchQuery = request.Query; 
+                    if (tool.Arguments.ValueKind == System.Text.Json.JsonValueKind.Object && tool.Arguments.TryGetProperty("query", out var queryProp))
+                    {
+                        searchQuery = queryProp.GetString() ?? request.Query;
+                    }
 
-                var systemPrompt = $@"You are a friendly, conversational AI assistant. 
-Answer the user's question naturally using ONLY the context below. Be concise.
-If the context doesn't have the answer, say you don't have that information.
+                    var queryEmbedding = await _llmService.GenerateEmbeddingAsync(searchQuery);
+                    await _vectorService.InitializeCollectionAsync();
+                    var scoredResults = await _vectorService.SearchSimilarChunksWithScoresAsync(queryEmbedding, topK: 3);
+                    
+                    var relevantIds = scoredResults.Select(r => r.Id).ToList();
+                    var chunks = await _context.DocumentChunks
+                        .Include(c => c.Document)
+                        .Where(c => relevantIds.Contains(c.Id))
+                        .ToListAsync();
 
-Context:
-{contextText}";
+                    toolContext = string.Join("\n\n", chunks.Select(c => {
+                        var txt = c.Text.Length > 800 ? c.Text.Substring(0, 800) : c.Text;
+                        return $"[Source: {c.Document?.Filename}]\n{txt}";
+                    }));
 
-                responseText = await _llmService.GenerateChatResponseAsync(systemPrompt, request.Query);
-                sources = chunks.Select(c => c.Document?.Filename ?? "").Where(f => !string.IsNullOrEmpty(f)).Distinct().ToList();
-            }
-            else
-            {
-                // No relevant documents — respond naturally as a general assistant
-                var systemPrompt = @"You are a friendly, conversational AI assistant. 
-Chat naturally with the user. Be warm, helpful, and concise. 
-You can have normal conversations — greetings, small talk, general knowledge questions.
-If the user asks about something specific that would require uploaded documents, 
-gently suggest they upload a relevant document first.";
+                    sources = chunks.Select(c => c.Document?.Filename ?? "").Where(f => !string.IsNullOrEmpty(f)).Distinct().ToList();
+                    
+                    if (string.IsNullOrWhiteSpace(toolContext))
+                        toolContext = "No relevant information was found in the documents.";
+                }
 
-                responseText = await _llmService.GenerateChatResponseAsync(systemPrompt, request.Query);
-                // No sources for casual/unrelated responses
+                // Step 3: Send tool results back to Agent to generate final answer
+                var followupPrompt = $@"You are a helpful AI Assistant. Answer the user's question using the Tool Results below.
+If the Tool Results contain the answer, use it and be concise.
+If the Tool Results say no information found, tell the user.
+
+Tool Results:
+{toolContext}";
+                
+                var finalResponse = await _llmService.GenerateChatResponseAsync(followupPrompt, request.Query);
+                finalResponseText = finalResponse.Content;
             }
 
             // Log Query
             var log = new QueryLog
             {
                 Query = request.Query,
-                Response = responseText
+                Response = finalResponseText
             };
             _context.QueryLogs.Add(log);
             await _context.SaveChangesAsync();
 
-            return Ok(new { Response = responseText, Sources = sources });
+            return Ok(new { Response = finalResponseText, Sources = sources });
         }
     }
 }

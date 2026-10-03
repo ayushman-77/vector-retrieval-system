@@ -71,13 +71,8 @@ namespace VectorRetrievalSystem.Api.services
             return allEmbeddings;
         }
 
-        public async Task<string> GenerateChatResponseAsync(string systemPrompt, string userPrompt, Func<string, Task<string>>? sqlQueryTool = null)
+        public async Task<ChatResult> GenerateChatResponseAsync(string systemPrompt, string userPrompt, object? tools = null)
         {
-            // Note: Ollama's Llama 3.1 supports tool calling natively via the /api/chat endpoint, 
-            // but to ensure broad compatibility with any free model (e.g. basic llama3, phi3), 
-            // we will simulate the behavior or omit it if they don't explicitly ask to run tools.
-            // For this implementation, we just do a standard generation based on context.
-
             var requestBody = new
             {
                 model = _chatModel,
@@ -87,17 +82,27 @@ namespace VectorRetrievalSystem.Api.services
                     new { role = "user", content = userPrompt }
                 },
                 stream = false,
-                options = new { num_ctx = 2048 }
+                options = new { num_ctx = 2048 },
+                tools = tools
             };
 
-            var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+            var content = new StringContent(JsonSerializer.Serialize(requestBody, new JsonSerializerOptions { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull }), Encoding.UTF8, "application/json");
             var response = await _httpClient.PostAsync($"{_ollamaUrl}/api/chat", content);
             response.EnsureSuccessStatusCode();
 
             var jsonResponse = await response.Content.ReadAsStringAsync();
-            var result = JsonSerializer.Deserialize<OllamaChatResponse>(jsonResponse, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var result = JsonSerializer.Deserialize<OllamaChatResponseRoot>(jsonResponse, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-            return result?.Message?.Content ?? string.Empty;
+            var message = result?.Message;
+            return new ChatResult
+            {
+                Content = message?.Content ?? string.Empty,
+                ToolCalls = message?.ToolCalls?.Select(tc => new ToolCall
+                {
+                    Name = tc.Function?.Name ?? string.Empty,
+                    Arguments = tc.Function?.Arguments ?? default
+                }).ToList() ?? new List<ToolCall>()
+            };
         }
 
         private class OllamaEmbeddingResponse
@@ -110,15 +115,28 @@ namespace VectorRetrievalSystem.Api.services
             public List<float[]>? Embeddings { get; set; }
         }
 
-        private class OllamaChatResponse
+        private class OllamaChatResponseRoot
         {
-            public OllamaMessage? Message { get; set; }
+            public OllamaChatResponse? Message { get; set; }
         }
 
-        private class OllamaMessage
+        public class OllamaChatResponse
         {
             public string? Role { get; set; }
             public string? Content { get; set; }
+            [JsonPropertyName("tool_calls")]
+            public List<OllamaToolCall>? ToolCalls { get; set; }
+        }
+
+        public class OllamaToolCall
+        {
+            public OllamaToolFunction? Function { get; set; }
+        }
+
+        public class OllamaToolFunction
+        {
+            public string? Name { get; set; }
+            public JsonElement Arguments { get; set; }
         }
     }
 }
