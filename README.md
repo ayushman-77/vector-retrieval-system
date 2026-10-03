@@ -44,12 +44,12 @@ To ensure the UI remains lightning-fast, document vectorization is offloaded to 
 5. **Vectorize:** The chunks are sent to the local Ollama container (`nomic-embed-text`) to generate mathematical vector embeddings.
 6. **Store:** The text chunks are saved to SQL Server, and their corresponding vectors are saved to Qdrant.
 
-### 2. Retrieval & Chat Pipeline (Smart Source Attribution)
-1. **Query:** The user asks a question in the chat interface.
-2. **Embed:** The question is converted into a vector embedding.
-3. **Vector Search:** Qdrant performs a Cosine Similarity search to find the top 3 most relevant document chunks.
-4. **Relevance Filtering:** The system checks the similarity score. If the score is `< 0.35` (e.g. the user said "Hello"), the system bypasses the documents and responds with a casual chat prompt.
-5. **Generation:** If the score is `>= 0.35`, the matching chunks are injected into the System Prompt. The `llama3.2` model generates a highly accurate answer, and the UI automatically attaches the source document names.
+### 2. Agentic Retrieval & Chat Pipeline (Tool Calling)
+The system leverages Llama 3.2's native **Function Calling** capabilities to act as an autonomous agent. Instead of a hardcoded search, the LLM intelligently routes queries to specific backend tools.
+1. **Agent Routing:** The user's query is sent to the LLM along with a JSON schema of available tools (`search_documents`, `get_database_stats`).
+2. **Decision Making:** The LLM autonomously decides whether to respond casually (e.g., "Hello!"), query the SQL database for system statistics, or execute a vector search for specific knowledge.
+3. **Tool Execution:** The C# backend intercepts the LLM's `tool_calls` request, executes the corresponding C# function (e.g., querying Qdrant or Entity Framework), and feeds the live data back to the LLM.
+4. **Final Generation:** The Agent synthesizes the tool results into a natural language response, and the UI automatically attaches any source document names.
 
 ---
 
