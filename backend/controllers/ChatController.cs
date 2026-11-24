@@ -33,7 +33,7 @@ namespace VectorRetrievalSystem.Api.controllers
                 return BadRequest("Query is required.");
 
             // Define tools for the agent
-            var tools = new[]
+            var tools = new object[]
             {
                 new {
                     type = "function",
