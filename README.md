@@ -6,6 +6,14 @@ It features an asynchronous event-driven architecture to handle heavy AI process
 
 ---
 
+## 🌐 Live Demo & Deployment
+
+Try out the application live in your browser:
+* **Custom URL:** [https://tinyurl.com/vector-retrieval-system](https://tinyurl.com/vector-retrieval-system)
+* **Direct Cloud Mirror:** [https://symmetrical-meme-979rrg6qgg4w2xrrg-4200.app.github.dev/](https://symmetrical-meme-979rrg6qgg4w2xrrg-4200.app.github.dev/)
+
+---
+
 ## 🛠️ Technology Stack
 
 **Frontend**
